@@ -1,14 +1,81 @@
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.models.scraping_job import ScrapingJob
 from app.models.industrial_zone import IndustrialZone
 from app.models.website import Website
 from app.schemas.job import JobOut, JobCreate
+from app.services.scraper import scrape_website_sync
 
 router = APIRouter()
+
+
+def execute_scraping_job_task(job_id: int):
+    """Background worker task to execute scraping pipelines across targets."""
+    db = SessionLocal()
+    try:
+        job = db.query(ScrapingJob).filter(ScrapingJob.id == job_id).first()
+        if not job:
+            return
+
+        job.status = "running"
+        job.started_at = datetime.utcnow()
+        db.commit()
+
+        # Determine target websites
+        query = db.query(Website)
+        if job.website_id:
+            query = query.filter(Website.id == job.website_id)
+        elif job.zone_id:
+            query = query.filter(Website.zone_id == job.zone_id)
+
+        # Apply crawl mode filtering
+        if job.crawl_mode == "new_only":
+            query = query.filter(Website.status.in_(["pending", "queued"]))
+        elif job.crawl_mode == "retry_failed":
+            query = query.filter(Website.status == "failed")
+
+        targets = query.all()
+        job.total_targets = len(targets)
+        db.commit()
+
+        successes = 0
+        errors = 0
+        logs = []
+
+        for w in targets:
+            try:
+                res = scrape_website_sync(w.id, db, max_pages=15)
+                if res.get("error"):
+                    errors += 1
+                    logs.append(f"[{w.domain}] Error: {res['error']}")
+                else:
+                    successes += 1
+                    logs.append(f"[{w.domain}] Discovered: {res['companies_discovered']} companies, {res['contacts_discovered']} contacts")
+            except Exception as e:
+                errors += 1
+                logs.append(f"[{w.domain}] Exception: {str(e)}")
+
+            job.processed_targets += 1
+            job.success_count = successes
+            job.error_count = errors
+            job.error_log = "\n".join(logs[-30:])
+            db.commit()
+
+        job.status = "completed" if errors == 0 or successes > 0 else "failed"
+        job.finished_at = datetime.utcnow()
+        db.commit()
+
+    except Exception as job_err:
+        if job:
+            job.status = "failed"
+            job.error_log = str(job_err)
+            job.finished_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
 
 
 @router.get("", response_model=List[JobOut])
@@ -58,7 +125,11 @@ def list_jobs(
 
 
 @router.post("", response_model=JobOut, status_code=201)
-def create_job(job_in: JobCreate, db: Session = Depends(get_db)):
+def create_job(
+    job_in: JobCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
     zone = None
     if job_in.zone_id:
         zone = db.query(IndustrialZone).filter(IndustrialZone.id == job_in.zone_id).first()
@@ -85,6 +156,9 @@ def create_job(job_in: JobCreate, db: Session = Depends(get_db)):
     db.add(job)
     db.commit()
     db.refresh(job)
+
+    # Dispatch scraping execution
+    background_tasks.add_task(execute_scraping_job_task, job.id)
 
     return JobOut(
         id=job.id,

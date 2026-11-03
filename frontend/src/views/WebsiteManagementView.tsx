@@ -2,30 +2,56 @@ import React, { useState } from 'react';
 import {
   Globe,
   Search,
-  RefreshCw,
   RotateCcw,
-  CheckCircle,
-  AlertTriangle,
-  Clock,
   Shield,
   ExternalLink,
+  Plus,
+  Play,
+  X,
+  CheckCircle2,
 } from 'lucide-react';
-import { Website } from '../types';
+import { Website, IndustrialZone } from '../types';
 
 interface WebsiteManagementViewProps {
   websites: Website[];
+  zones: IndustrialZone[];
   onUpdateMode: (websiteId: number, mode: 'new_only' | 'retry_failed' | 'refresh_all') => void;
   onRetry: (websiteId: number) => void;
+  onAddWebsite: (payload: { base_url: string; zone_id?: number; crawl_mode?: string }) => void;
+  onScrapeWebsite: (websiteId: number) => void;
+  isAdding?: boolean;
 }
 
 export const WebsiteManagementView: React.FC<WebsiteManagementViewProps> = ({
   websites,
+  zones,
   onUpdateMode,
   onRetry,
+  onAddWebsite,
+  onScrapeWebsite,
+  isAdding = false,
 }) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [modeFilter, setModeFilter] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Form state
+  const [newUrl, setNewUrl] = useState('');
+  const [newZoneId, setNewZoneId] = useState<string>('');
+  const [newCrawlMode, setNewCrawlMode] = useState<'new_only' | 'retry_failed' | 'refresh_all'>('new_only');
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUrl.trim()) return;
+    onAddWebsite({
+      base_url: newUrl.trim(),
+      zone_id: newZoneId ? parseInt(newZoneId, 10) : undefined,
+      crawl_mode: newCrawlMode,
+    });
+    setNewUrl('');
+    setIsModalOpen(false);
+  };
 
   const filteredWebsites = websites.filter((w) => {
     const matchesSearch =
@@ -41,16 +67,26 @@ export const WebsiteManagementView: React.FC<WebsiteManagementViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
-          <Globe className="w-5 h-5 text-purple-400" />
-          Website Registry & Crawl Policies
-        </h2>
-        <p className="text-xs text-slate-400">
-          Persistent registry tracking visited domains, HTTP status, crawl modes (New Only, Retry Failed, Refresh),
-          and robots.txt compliance.
-        </p>
+      {/* Header with Register Button */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <Globe className="w-5 h-5 text-purple-400" />
+            Website Registry & Crawl Policies
+          </h2>
+          <p className="text-xs text-slate-400">
+            Persistent registry tracking visited domains, HTTP status, crawl modes (New Only, Retry Failed, Refresh),
+            and robots.txt compliance.
+          </p>
+        </div>
+
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="self-start md:self-auto flex items-center gap-2 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white shadow-md shadow-blue-600/30 transition"
+        >
+          <Plus className="w-4 h-4" />
+          Add Website Link
+        </button>
       </div>
 
       {/* Crawl Mode Legend Banner */}
@@ -218,7 +254,16 @@ export const WebsiteManagementView: React.FC<WebsiteManagementViewProps> = ({
                     )}
                   </td>
 
-                  <td className="py-3 px-4 text-right">
+                  <td className="py-3 px-4 text-right space-x-1.5">
+                    <button
+                      onClick={() => onScrapeWebsite(w.id)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600/20 hover:bg-blue-600 hover:text-white text-blue-300 text-[11px] font-medium transition border border-blue-500/30"
+                      title="Run discovery scrape on this website now"
+                    >
+                      <Play className="w-3 h-3 fill-current" />
+                      Scrape Now
+                    </button>
+
                     {w.status === 'failed' && (
                       <button
                         onClick={() => onRetry(w.id)}
@@ -235,6 +280,97 @@ export const WebsiteManagementView: React.FC<WebsiteManagementViewProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Add Website Modal Dialog */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in duration-150">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Globe className="w-4 h-4 text-blue-400" />
+                Register Website for Discovery
+              </h3>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="text-slate-400 hover:text-white transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Enter any OSB portal or company website URL. The engine will check robots.txt, catalog pages, discover companies, and extract public business contacts.
+            </p>
+
+            <form onSubmit={handleFormSubmit} className="space-y-3 pt-2">
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Website URL / Link *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="https://bosb.org.tr or https://example-company.com"
+                  value={newUrl}
+                  onChange={(e) => setNewUrl(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Associated Industrial Zone (Optional)
+                </label>
+                <select
+                  value={newZoneId}
+                  onChange={(e) => setNewZoneId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                >
+                  <option value="">None / Independent Manufacturer</option>
+                  {zones.map((z) => (
+                    <option key={z.id} value={z.id}>
+                      {z.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-300 mb-1">
+                  Crawl Mode
+                </label>
+                <select
+                  value={newCrawlMode}
+                  onChange={(e) => setNewCrawlMode(e.target.value as any)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-blue-500 font-mono"
+                >
+                  <option value="new_only">New Websites Only</option>
+                  <option value="retry_failed">Retry Failed</option>
+                  <option value="refresh_all">Refresh Existing Data</option>
+                </select>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-300 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAdding || !newUrl.trim()}
+                  className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white shadow-md shadow-blue-600/30 transition disabled:opacity-50"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  Register & Start Discovery
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

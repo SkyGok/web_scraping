@@ -114,6 +114,19 @@ export const api = {
     return fetchJson<Website[]>(`/websites${qs}`);
   },
 
+  async addWebsite(payload: { base_url: string; zone_id?: number; crawl_mode?: string }): Promise<Website> {
+    return fetchJson<Website>('/websites?auto_scrape=true', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async scrapeWebsite(websiteId: number): Promise<{ message: string; result: any }> {
+    return fetchJson(`/websites/${websiteId}/scrape`, {
+      method: 'POST',
+    });
+  },
+
   async updateWebsiteCrawlMode(websiteId: number, crawlMode: string): Promise<Website> {
     return fetchJson<Website>(`/websites/${websiteId}/crawl-mode`, {
       method: 'PUT',

@@ -137,6 +137,29 @@ export const App: React.FC = () => {
     }
   };
 
+  // Handle Register Website
+  const handleRegisterWebsite = async (payload: { base_url: string; zone_id?: number; crawl_mode?: string }) => {
+    try {
+      const site = await api.addWebsite(payload);
+      showNotification(`Website registered: ${site.domain}. Discovery crawl dispatched!`);
+      await loadAllData();
+    } catch (err: any) {
+      showNotification(`Registration error: ${err.message}`);
+    }
+  };
+
+  // Handle Scrape Website On-Demand
+  const handleScrapeWebsite = async (websiteId: number) => {
+    try {
+      showNotification('Discovery crawl started...');
+      const res = await api.scrapeWebsite(websiteId);
+      showNotification(res.message);
+      await loadAllData();
+    } catch (err: any) {
+      showNotification(`Scrape error: ${err.message}`);
+    }
+  };
+
   // Handle Quick Job Start from OSB table
   const handleStartJobForZone = (zoneId: number, zoneName: string) => {
     handleTriggerJob({
